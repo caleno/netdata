@@ -261,12 +261,22 @@ static void timer_cb(uv_timer_t* handle)
                 wc->rotation_after += ACLK_DATABASE_ROTATION_INTERVAL;
         }
 
-        if (wc->chart_updates && !wc->chart_pending) {
+        if (wc->chart_updates && !wc->chart_pending && wc->chart_payload_count) {
             cmd.opcode = ACLK_DATABASE_PUSH_CHART;
             cmd.count = ACLK_MAX_CHART_BATCH;
             cmd.param1 = ACLK_MAX_CHART_BATCH_COUNT;
-            if (!aclk_database_enq_cmd_noblock(wc, &cmd))
+            if (!aclk_database_enq_cmd_noblock(wc, &cmd)) {
+                if (wc->retry_count)
+                    info("Queued chart/dimension payload command %s, retry count = %u", wc->host_guid, wc->retry_count);
                 wc->chart_pending = 1;
+                wc->retry_count = 0;
+            } else {
+                wc->retry_count++;
+                if (wc->retry_count % 100 == 0)
+                    error_report("Failed to queue chart/dimension payload command %s, retry count = %u",
+                        wc->host_guid,
+                        wc->retry_count);
+            }
         }
 
         if (wc->alert_updates) {
@@ -324,7 +334,7 @@ void aclk_database_worker(void *arg)
     timer_req.data = wc;
     fatal_assert(0 == uv_timer_start(&timer_req, timer_cb, TIMER_PERIOD_MS, TIMER_PERIOD_MS));
 
-    wc->error = 0;
+    wc->retry_count = 0;
     shutdown = 0;
 
     wc->node_info_send = (wc->host && !localhost);
@@ -332,12 +342,17 @@ void aclk_database_worker(void *arg)
     info("Starting ACLK sync thread for host %s -- scratch area %lu bytes", wc->host_guid, sizeof(*wc));
 
     memset(&cmd, 0, sizeof(cmd));
-    sql_get_last_chart_sequence(wc, cmd);
+#ifdef ENABLE_NEW_CLOUD_PROTOCOL
+    sql_get_last_chart_sequence(wc);
+    wc->chart_payload_count = sql_get_pending_count(wc);
+#endif
     wc->chart_updates = 0;
-    wc->alert_updates = 0;
     wc->startup_time = now_realtime_sec();
     wc->cleanup_after = wc->startup_time + ACLK_DATABASE_CLEANUP_FIRST;
     wc->rotation_after = wc->startup_time + ACLK_DATABASE_ROTATION_DELAY;
+    wc->alert_updates = 0;
+
+    debug(D_ACLK_SYNC,"Node %s reports pending message count = %u", wc->node_id, wc->chart_payload_count);
     while (likely(shutdown == 0)) {
         uv_run(loop, UV_RUN_DEFAULT);
 
@@ -370,6 +385,7 @@ void aclk_database_worker(void *arg)
                     break;
 
 // CHART / DIMENSION OPERATIONS
+#ifdef ENABLE_NEW_CLOUD_PROTOCOL
                 case ACLK_DATABASE_ADD_CHART:
                     debug(D_ACLK_SYNC, "Adding chart event for %s", wc->host_guid);
                     aclk_add_chart_event(wc, cmd);
@@ -394,7 +410,7 @@ void aclk_database_worker(void *arg)
                     debug(D_ACLK_SYNC, "RESET chart SEQ for %s to %"PRIu64, wc->uuid_str, (uint64_t) cmd.param1);
                     aclk_receive_chart_reset(wc, cmd);
                     break;
-
+#endif
 // ALERTS
                 case ACLK_DATABASE_ADD_ALERT:
                     debug(D_ACLK_SYNC,"Adding alert event for %s", wc->host_guid);
@@ -426,10 +442,17 @@ void aclk_database_worker(void *arg)
                     debug(D_ACLK_SYNC,"Sending node info for %s", wc->uuid_str);
                     sql_build_node_info(wc, cmd);
                     break;
+#ifdef ENABLE_NEW_CLOUD_PROTOCOL
+                case ACLK_DATABASE_DIM_DELETION:
+                    debug(D_ACLK_SYNC,"Sending dimension deletion information %s", wc->uuid_str);
+                    aclk_process_dimension_deletion(wc, cmd);
+                    break;
                 case ACLK_DATABASE_UPD_RETENTION:
                     debug(D_ACLK_SYNC,"Sending retention info for %s", wc->uuid_str);
                     aclk_update_retention(wc, cmd);
+                    aclk_process_dimension_deletion(wc, cmd);
                     break;
+#endif
 
 // NODE_INSTANCE DETECTION
                 case ACLK_DATABASE_TIMER:
@@ -503,8 +526,6 @@ error_after_async_init:
     fatal_assert(0 == uv_loop_close(loop));
 error_after_loop_init:
     freez(loop);
-
-    wc->error = UV_EAGAIN;
 }
 
 // -------------------------------------------------------------
