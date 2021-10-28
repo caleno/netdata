@@ -1382,19 +1382,19 @@ void rrdset_done(RRDSET *st) {
     rrdset_rdlock(st);
 
 #ifdef ENABLE_ACLK
-    #ifdef ENABLE_NEW_CLOUD_PROTOCOL
+//    #ifdef ENABLE_NEW_CLOUD_PROTOCOL
     if (unlikely(!rrdset_flag_check(st, RRDSET_FLAG_ACLK))) {
         if (st->counter_done >= RRDSET_MINIMUM_LIVE_COUNT) {
             if (likely(!sql_queue_chart_to_aclk(st)))
                 rrdset_flag_set(st, RRDSET_FLAG_ACLK);
         }
     }
-    #else
-    if (unlikely(!rrdset_flag_check(st, RRDSET_FLAG_ACLK))) {
-        rrdset_flag_set(st, RRDSET_FLAG_ACLK);
-        aclk_update_chart(st->rrdhost, st->id, 1);
-    }
-    #endif
+//    #else
+//    if (unlikely(!rrdset_flag_check(st, RRDSET_FLAG_ACLK))) {
+//        rrdset_flag_set(st, RRDSET_FLAG_ACLK);
+//        aclk_update_chart(st->rrdhost, st->id, 1);
+//    }
+//    #endif
 #endif
 
     if(unlikely(rrdset_flag_check(st, RRDSET_FLAG_OBSOLETE))) {

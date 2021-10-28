@@ -948,7 +948,13 @@ int sql_queue_chart_to_aclk(RRDSET *st)
     if (!aclk_use_new_cloud_arch)
 #endif
     {
-        rrdset_flag_clear(st, RRDSET_FLAG_ACLK);
+        if (!aclk_connected) {
+            sql_queue_chart_payload((struct aclk_database_worker_config *) st->rrdhost->dbsync_worker,
+                                    st, ACLK_DATABASE_ADD_CHART);
+            return 0;
+        }
+        //info("Setting ACLK FLAG to SET for chart %s due to aclk_use_new_cloud_arch=0", st->name);
+        //rrdset_flag_clear(st, RRDSET_FLAG_ACLK);
         aclk_update_chart(st->rrdhost, st->id, 1);
         return 0;
     }
@@ -967,9 +973,11 @@ int sql_queue_chart_to_aclk(RRDSET *st)
 int sql_queue_dimension_to_aclk(RRDDIM *rd)
 {
 #ifdef ENABLE_NEW_CLOUD_PROTOCOL
-    if (!aclk_use_new_cloud_arch)
-        return 0;
-
+//    if (!aclk_connected)
+//        return 1;
+//
+//    if (!aclk_use_new_cloud_arch)
+//        return 0;
     int rc = sql_queue_chart_payload((struct aclk_database_worker_config *) rd->rrdset->rrdhost->dbsync_worker,
                                      rd, ACLK_DATABASE_ADD_DIMENSION);
     return rc;
