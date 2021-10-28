@@ -680,7 +680,10 @@ void aclk_start_streaming(char *node_id, uint64_t sequence_id, time_t created_at
                     struct aclk_database_cmd cmd;
                     memset(&cmd, 0, sizeof(cmd));
                     // TODO: handle timestamp
-                    if (sequence_id < wc->chart_sequence_id) { // || created_at != wc->chart_timestamp) {
+                    if (sequence_id < wc->chart_sequence_id || !sequence_id) { // || created_at != wc->chart_timestamp) {
+                        info("RESET streaming charts for %s from sequence %"PRIu64 \
+                             " t=%ld (reset count=%d)", wc->node_id, wc->chart_sequence_id,
+                             wc->chart_timestamp, wc->chart_reset_count);
                         cmd.opcode = ACLK_DATABASE_RESET_CHART;
                         cmd.param1 = sequence_id + 1;
                         cmd.completion = NULL;
