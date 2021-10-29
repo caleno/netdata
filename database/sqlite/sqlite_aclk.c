@@ -345,6 +345,8 @@ void aclk_database_worker(void *arg)
 #ifdef ENABLE_NEW_CLOUD_PROTOCOL
     sql_get_last_chart_sequence(wc);
     wc->chart_payload_count = sql_get_pending_count(wc);
+    if (!wc->chart_payload_count)
+        info("%s: No pending charts and dimensions detected during startup", wc->host_guid);
 #endif
     wc->chart_updates = 0;
     wc->startup_time = now_realtime_sec();

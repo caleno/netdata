@@ -403,8 +403,11 @@ void aclk_send_chart_event(struct aclk_database_worker_config *wc, struct aclk_d
         if (wc->rotation_after > now && wc->rotation_after < now + ACLK_DATABASE_ROTATION_DELAY)
             wc->rotation_after = now + ACLK_DATABASE_ROTATION_DELAY;
     }
-    else
+    else {
         wc->chart_payload_count = sql_get_pending_count(wc);
+        if (!wc->chart_payload_count)
+            info("%s: sync of charts and dimensions done in %ld seconds", wc->host->hostname, now_realtime_sec() - wc->startup_time);
+    }
 
     for (int i = 0; i <= limit; ++i)
         freez(payload_list[i]);
@@ -946,30 +949,21 @@ fail:
 // ST is read locked
 int sql_queue_chart_to_aclk(RRDSET *st)
 {
-#ifdef ENABLE_ACLK
-#ifdef ENABLE_NEW_CLOUD_PROTOCOL
-    if (!aclk_use_new_cloud_arch)
-#endif
-    {
-        if (!aclk_connected) {
-            sql_queue_chart_payload((struct aclk_database_worker_config *) st->rrdhost->dbsync_worker,
-                                    st, ACLK_DATABASE_ADD_CHART);
-            return 0;
-        }
-        //info("Setting ACLK FLAG to SET for chart %s due to aclk_use_new_cloud_arch=0", st->name);
-        //rrdset_flag_clear(st, RRDSET_FLAG_ACLK);
+#ifndef ENABLE_ACLK
+    UNUSED(st);
+    return 0;
+#else
+#ifndef ENABLE_NEW_CLOUD_PROTOCOL
+    aclk_update_chart(st->rrdhost, st->id, 1);
+    return 0;
+#else
+    if (!aclk_use_new_cloud_arch && aclk_connected) {
         aclk_update_chart(st->rrdhost, st->id, 1);
         return 0;
     }
-#ifdef ENABLE_NEW_CLOUD_PROTOCOL
     return sql_queue_chart_payload((struct aclk_database_worker_config *) st->rrdhost->dbsync_worker,
-                                   st, ACLK_DATABASE_ADD_CHART);
-#else
-    return 0;
+                                       st, ACLK_DATABASE_ADD_CHART);
 #endif
-#else
-    UNUSED(st);
-    return 0;
 #endif
 }
 
