@@ -312,7 +312,7 @@ static int handle_connection(mqtt_wss_client client)
         // for netdata_exit
         if (mqtt_wss_service(client, 1000) < 0){
             error("Connection Error or Dropped");
-            return 1;
+            return !netdata_exit;
         }
 
         // mqtt_wss_service will return faster than in one second
