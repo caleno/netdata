@@ -462,7 +462,7 @@ void aclk_database_worker(void *arg)
                         if (claimed()) {
                             wc->host = rrdhost_find_by_guid(wc->host_guid, 0);
                             if (wc->host) {
-                                info("HOST %s detected as active and claimed !!!", wc->host->hostname);
+                                info("HOST %s (%s) detected as active", wc->host->hostname, wc->host_guid);
                                 snprintfz(threadname, NETDATA_THREAD_NAME_MAX, "AS_%s", wc->host->hostname);
                                 uv_thread_set_name_np(wc->thread, threadname);
                                 wc->host->dbsync_worker = wc;
@@ -477,22 +477,25 @@ void aclk_database_worker(void *arg)
                         wc->node_info_send = aclk_database_enq_cmd_noblock(wc, &cmd);
                     }
                     break;
-                case ACLK_DATABASE_SHUTDOWN:
-                    shutdown = 1;
-                    fatal_assert(0 == uv_timer_stop(&timer_req));
-                    uv_close((uv_handle_t *)&timer_req, NULL);
-                    break;
+//                case ACLK_DATABASE_SHUTDOWN:
+//                    shutdown = 1;
+//                    fatal_assert(0 == uv_timer_stop(&timer_req));
+//                    uv_close((uv_handle_t *)&timer_req, NULL);
+//                    break;
                 default:
                     debug(D_ACLK_SYNC, "%s: default.", __func__);
                     break;
             }
             if (cmd.completion)
                 aclk_complete(cmd.completion);
-        } while (opcode != ACLK_DATABASE_NOOP);
+        } while (opcode != ACLK_DATABASE_NOOP || !netdata_exit);
     }
 
+    if (!uv_timer_stop(&timer_req))
+        uv_close((uv_handle_t *)&timer_req, NULL);
+
     /* cleanup operations of the event loop */
-    info("Shutting down ACLK_DATABASE engine event loop.");
+    info("Shutting down ACLK sync event loop.");
 
     /*
      * uv_async_send after uv_close does not seem to crash in linux at the moment,
@@ -502,7 +505,7 @@ void aclk_database_worker(void *arg)
     uv_close((uv_handle_t *)&wc->async, NULL);
     uv_run(loop, UV_RUN_DEFAULT);
 
-    info("Shutting down ACLK_DATABASE engine event loop complete.");
+    info("Shutting down ACLK sync event loop complete.");
     /* TODO: don't let the API block by waiting to enqueue commands */
     uv_cond_destroy(&wc->cmd_cond);
 /*  uv_mutex_destroy(&wc->cmd_mutex); */
